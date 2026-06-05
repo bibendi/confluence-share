@@ -54,14 +54,14 @@ export class MarkdownConverter {
 		return { attachments, mermaid, plantUml };
 	}
 
-	async convert(markdown: string, sourcePath: string, ctx: ConvertContext): Promise<string> {
+	async convert(markdown: string, _sourcePath: string, ctx: ConvertContext): Promise<string> {
 		const body = stripFrontmatter(markdown);
 		const preprocessed = preprocessObsidianSyntax(body);
 
 		// 预计算每个 fence 块的 hash,渲染器同步查表
 		const fenceHashMap = await this.buildFenceHashMap(preprocessed);
 
-		const md = this.buildRenderer(sourcePath, ctx, fenceHashMap);
+		const md = this.buildRenderer(ctx, fenceHashMap);
 		const html = md.render(preprocessed);
 
 		return postProcessHtml(html, ctx);
@@ -73,14 +73,19 @@ export class MarkdownConverter {
 	}
 
 	private collectAttachments(markdown: string, sourcePath: string): AttachmentRef[] {
+		// 屏蔽 fenced / inline code 区域,避免把代码示例里的 ![[...]] / ![](...) 误当成真实附件引用
+		const { masked } = maskCodeRegions(markdown);
 		const refs: AttachmentRef[] = [];
 		const seen = new Set<string>();
 
 		// Obsidian embed:![[file.png|alt]] / ![[folder/file.png]]
-		const embedRe = /!\[\[([^\]\n|]+)(?:\|([^\]\n]*))?\]\]/g;
+		// `\\?\|` 兼容 markdown 表格内的 escape pipe(`\|`),否则 `\` 会被吞进 linkpath
+		const embedRe = /!\[\[([^\]\n|\\]+)(?:\\?\|([^\]\n]*))?\]\]/g;
 		let m: RegExpExecArray | null;
-		while ((m = embedRe.exec(markdown)) !== null) {
+		while ((m = embedRe.exec(masked)) !== null) {
 			const linkpath = m[1]!.trim();
+			// note/heading/block 嵌入(![[note#section]] / ![[note#^id]])不是附件,跳过
+			if (linkpath.includes('#')) continue;
 			const alt = (m[2] ?? '').trim();
 			const tfile = resolveAttachmentFile(this.app, linkpath, sourcePath);
 			const filename = tfile?.name ?? linkpath.split('/').pop() ?? linkpath;
@@ -93,10 +98,11 @@ export class MarkdownConverter {
 		// 标准 markdown 图片:![alt](path "title")
 		// 仅相对路径或不带 scheme 的 URL 视为本地附件
 		const imgRe = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
-		while ((m = imgRe.exec(markdown)) !== null) {
+		while ((m = imgRe.exec(masked)) !== null) {
 			const alt = m[1] ?? '';
 			const path = m[2]!;
 			if (/^[a-z][a-z0-9+\-.]*:\/\//i.test(path) || path.startsWith('data:')) continue;
+			if (path.includes('#')) continue;
 			const decoded = tryDecode(path);
 			const tfile = resolveAttachmentFile(this.app, decoded, sourcePath);
 			const filename = tfile?.name ?? decoded.split('/').pop() ?? decoded;
@@ -135,7 +141,7 @@ export class MarkdownConverter {
 		return map;
 	}
 
-	private buildRenderer(sourcePath: string, ctx: ConvertContext, fenceHashes: Map<string, string>): MarkdownIt {
+	private buildRenderer(ctx: ConvertContext, fenceHashes: Map<string, string>): MarkdownIt {
 		// xhtmlOut: true — Confluence storage 是严格 XHTML,空元素必须自闭合(<hr /> 而非 <hr>)
 		const md = new MarkdownIt({ html: false, xhtmlOut: true, breaks: false, linkify: true });
 
@@ -228,24 +234,70 @@ function stripFrontmatter(md: string): string {
  *   随后 blockquote_open 渲染器根据这个特征转 ac:structured-macro
  */
 function preprocessObsidianSyntax(md: string): string {
+	// 先把代码区(fenced + inline)替换成占位符,避免代码示例里的 ![[...]] / [[...]] 被改写
+	const { masked, restore } = maskCodeRegions(md);
+	let s = masked;
+
 	// 1. ![[...]] embed → ![alt](path)
-	md = md.replace(/!\[\[([^\]\n|]+)(?:\|([^\]\n]*))?\]\]/g, (_full, link: string, alias: string) => {
+	//    - `[^|\\]+` + `\\?\|` 兼容 markdown 表格内 escaped pipe(`\|`)
+	//    - 带 `#section` / `#^block` 的是笔记片段嵌入,不是图片附件,降级为纯文本
+	s = s.replace(/!\[\[([^\]\n|\\]+)(?:\\?\|([^\]\n]*))?\]\]/g, (_full, link: string, alias: string) => {
 		const text = (alias ?? '').trim();
-		return `![${text}](${link.trim()})`;
+		const linkpath = link.trim();
+		if (linkpath.includes('#')) {
+			return text || linkpath.split('/').pop() || linkpath;
+		}
+		return `![${text}](${linkpath})`;
 	});
 
 	// 2. [[link|alias]] / [[link]] → alias(纯文本)
-	md = md.replace(/\[\[([^\]\n|]+)(?:\|([^\]\n]*))?\]\]/g, (_full, link: string, alias: string) => {
-		const text = (alias ?? '').trim() || link.trim().split('/').pop() || link;
+	s = s.replace(/\[\[([^\]\n|\\]+)(?:\\?\|([^\]\n]*))?\]\]/g, (_full, link: string, alias: string) => {
+		const cleanLink = link.trim();
+		const text = (alias ?? '').trim() || cleanLink.split('/').pop() || cleanLink;
 		return text;
 	});
 
-	// 3. callout 头部:`> [!info] Title` → 标记式 `> __CALLOUT_INFO__ Title`
-	md = md.replace(/^(> )\[!([a-zA-Z]+)\](.*)$/gm, (_full, prefix: string, type: string, rest: string) => {
-		return `${prefix}__CALLOUT_${type.toUpperCase()}__${rest}`;
+	// 3. callout 头部:`> [!info] Title` → 私有区字符包裹的标记 `> CALLOUT:INFO Title`
+	//    用 PUA(U+E000/U+E001)而不是 `__CALLOUT_X__`,避免被 markdown-it 当成 strong(`__bold__`)消化掉前后下划线
+	s = s.replace(/^(> )\[!([a-zA-Z]+)\](.*)$/gm, (_full, prefix: string, type: string, rest: string) => {
+		return `${prefix}CALLOUT:${type.toUpperCase()}${rest}`;
 	});
 
-	return md;
+	return restore(s);
+}
+
+const CODE_MASK_OPEN = '';
+const CODE_MASK_CLOSE = '';
+const CODE_MASK_RE = /(\d+)/g;
+
+/**
+ * 用占位符屏蔽 markdown 里的代码区(fenced ```/~~~ 和 inline `…`),
+ * 避免后续 Obsidian 语法预处理 / 附件提取 regex 误伤代码示例。
+ * 返回 masked 串和 restore 函数(把占位符还原回原文)。
+ */
+function maskCodeRegions(md: string): { masked: string; restore: (s: string) => string } {
+	const buf: string[] = [];
+	const stash = (text: string): string => {
+		const idx = buf.length;
+		buf.push(text);
+		return `${CODE_MASK_OPEN}${idx}${CODE_MASK_CLOSE}`;
+	};
+
+	// 1. fenced code(``` 或 ~~~,允许同级缩进闭合)
+	let masked = md.replace(
+		/(^|\n)([ \t]*)(`{3,}|~{3,})([^\n]*\n[\s\S]*?\n)\2\3[ \t]*(?=\n|$)/g,
+		(_full, lead: string, indent: string, fence: string, body: string) => {
+			return `${lead}${stash(`${indent}${fence}${body}${indent}${fence}`)}`;
+		},
+	);
+
+	// 2. inline code:`...` / ``...``(平衡的反引号对,内容不含换行)
+	masked = masked.replace(/(`+)([^`\n]+?)\1(?!`)/g, (full) => stash(full));
+
+	const restore = (s: string): string =>
+		s.replace(CODE_MASK_RE, (_, idxStr: string) => buf[parseInt(idxStr, 10)] ?? '');
+
+	return { masked, restore };
 }
 
 interface FenceBlock { lang: string; content: string; }
@@ -287,13 +339,15 @@ function detectCalloutType(tokens: ReadonlyArray<{ type: string; content?: strin
 		if (tk.type === 'blockquote_close') return null;
 		if (tk.type !== 'inline') continue;
 		const text = (tk.children?.[0]?.content ?? tk.content ?? '');
-		const m = text.match(/^__CALLOUT_([A-Z]+)__/);
+		// PUA(U+E000/U+E001)包裹的 callout 标记 — 与 preprocessObsidianSyntax 保持一致
+		const m = text.match(/^CALLOUT:([A-Z]+)/);
 		if (!m) return null;
 		// 把前缀从首个 text token 移除,留下标题
+		const stripRe = /^CALLOUT:[A-Z]+\s*/;
 		if (tk.children?.[0]) {
-			tk.children[0].content = tk.children[0].content.replace(/^__CALLOUT_[A-Z]+__\s*/, '');
+			tk.children[0].content = tk.children[0].content.replace(stripRe, '');
 		} else {
-			tk.content = tk.content?.replace(/^__CALLOUT_[A-Z]+__\s*/, '') ?? '';
+			tk.content = tk.content?.replace(stripRe, '') ?? '';
 		}
 		const type = m[1]!;
 		return { type, macro: mapCalloutMacro(type) };
