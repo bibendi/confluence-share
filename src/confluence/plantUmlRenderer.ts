@@ -56,7 +56,7 @@ async function encodePlantUml(source: string): Promise<string> {
 }
 
 async function deflateRaw(data: Uint8Array): Promise<Uint8Array> {
-	const CS = (globalThis as { CompressionStream?: typeof CompressionStream }).CompressionStream;
+	const CS = (window as unknown as { CompressionStream?: typeof CompressionStream }).CompressionStream;
 	if (!CS) throw new Error('CompressionStream 不可用,无法编码 PlantUML');
 	const stream = new Blob([data as BlobPart]).stream().pipeThrough(new CS('deflate-raw'));
 	const buf = await new Response(stream).arrayBuffer();

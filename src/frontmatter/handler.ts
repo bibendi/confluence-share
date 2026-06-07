@@ -10,6 +10,12 @@ const FIELD = {
 	ATTACHMENTS: 'confluence_attachments',
 } as const;
 
+/**
+ * frontmatter 在 Obsidian 类型上是 `any`,但我们只读写已知字段,
+ * 全局缩窄为 `Record<string, unknown>` 让 lint 不再报 no-unsafe-*。
+ */
+export type Frontmatter = Record<string, unknown>;
+
 export interface BindingPatch {
 	url?: string;
 	pageId?: string;
@@ -23,7 +29,7 @@ export interface BindingPatch {
  * 仅在存在 confluence_url 时返回非 null。
  */
 export function readBindingFromCache(app: App, file: TFile, urlKey: string = FIELD.URL): NoteBinding | null {
-	const fm = app.metadataCache.getFileCache(file)?.frontmatter;
+	const fm = app.metadataCache.getFileCache(file)?.frontmatter as Frontmatter | undefined;
 	if (!fm) return null;
 	const rawUrl = fm[urlKey];
 	const rawParent = fm[FIELD.PARENT_URL];
@@ -32,21 +38,26 @@ export function readBindingFromCache(app: App, file: TFile, urlKey: string = FIE
 	// url 或 parent_url 至少一个有值,才是被本插件管理的笔记
 	if (!url && !parentUrl) return null;
 
-	const attachments = isAttachmentMap(fm[FIELD.ATTACHMENTS]) ? fm[FIELD.ATTACHMENTS] : undefined;
+	const rawAttachments = fm[FIELD.ATTACHMENTS];
+	const attachments = isAttachmentMap(rawAttachments) ? rawAttachments : undefined;
+	const rawPageId = fm[FIELD.PAGE_ID];
+	const rawLastSynced = fm[FIELD.LAST_SYNCED];
+	const rawLastHash = fm[FIELD.LAST_HASH];
 
 	return {
 		url,
 		parentUrl: parentUrl || undefined,
-		pageId: typeof fm[FIELD.PAGE_ID] === 'string' ? fm[FIELD.PAGE_ID] : '',
-		lastSynced: typeof fm[FIELD.LAST_SYNCED] === 'string' ? fm[FIELD.LAST_SYNCED] : undefined,
-		lastHash: typeof fm[FIELD.LAST_HASH] === 'string' ? fm[FIELD.LAST_HASH] : undefined,
+		pageId: typeof rawPageId === 'string' ? rawPageId : '',
+		lastSynced: typeof rawLastSynced === 'string' ? rawLastSynced : undefined,
+		lastHash: typeof rawLastHash === 'string' ? rawLastHash : undefined,
 		attachments,
 	};
 }
 
 /** 同步成功后回写 frontmatter。app.fileManager.processFrontMatter 会原子地处理。 */
 export async function writeBinding(app: App, file: TFile, patch: BindingPatch): Promise<void> {
-	await app.fileManager.processFrontMatter(file, (fm) => {
+	await app.fileManager.processFrontMatter(file, (raw: unknown) => {
+		const fm = raw as Frontmatter;
 		if (patch.url !== undefined) fm[FIELD.URL] = patch.url;
 		if (patch.pageId !== undefined) fm[FIELD.PAGE_ID] = patch.pageId;
 		if (patch.lastSynced !== undefined) fm[FIELD.LAST_SYNCED] = patch.lastSynced;
@@ -58,8 +69,10 @@ export async function writeBinding(app: App, file: TFile, patch: BindingPatch): 
 /** 给当前文件插入模板 frontmatter 字段(仅在尚未存在 confluence_url 时);返回是否插入了。 */
 export async function insertTemplateFrontmatter(app: App, file: TFile, placeholderUrl = ''): Promise<boolean> {
 	let inserted = false;
-	await app.fileManager.processFrontMatter(file, (fm) => {
-		if (typeof fm[FIELD.URL] === 'string' && fm[FIELD.URL].trim()) return;
+	await app.fileManager.processFrontMatter(file, (raw: unknown) => {
+		const fm = raw as Frontmatter;
+		const existing = fm[FIELD.URL];
+		if (typeof existing === 'string' && existing.trim()) return;
 		fm[FIELD.URL] = placeholderUrl;
 		fm[FIELD.PARENT_URL] = '';
 		fm[FIELD.PAGE_ID] = '';

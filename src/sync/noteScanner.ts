@@ -1,4 +1,5 @@
 import type { App, TFile } from 'obsidian';
+import type { Frontmatter } from '../frontmatter/handler';
 
 export interface ScanOptions {
 	frontmatterKey: string;
@@ -9,11 +10,14 @@ export interface ScanOptions {
 /**
  * 扫描 vault 中所有含 confluence_url frontmatter 的笔记。
  * 走 metadataCache,O(n) 但每个文件只查 cache(已索引),不读盘。
+ *
+ * 自动隐式忽略 Obsidian 的配置目录(默认 `.obsidian`,可被用户改),
+ * 用户无需在 ignorePatterns 里手动维护这一项。
  */
 export function scanBoundNotes(app: App, opts: ScanOptions): TFile[] {
 	const all = app.vault.getMarkdownFiles();
 	const scanFolders = opts.scanFolders.map(normalizeFolder).filter((s) => s.length > 0);
-	const ignoreRegexes = opts.ignorePatterns
+	const ignoreRegexes = [`${app.vault.configDir}/**`, ...opts.ignorePatterns]
 		.map((p) => p.trim())
 		.filter((p) => p.length > 0)
 		.map(globToRegex);
@@ -22,7 +26,7 @@ export function scanBoundNotes(app: App, opts: ScanOptions): TFile[] {
 	for (const file of all) {
 		if (scanFolders.length > 0 && !scanFolders.some((f) => file.path === f || file.path.startsWith(f + '/'))) continue;
 		if (ignoreRegexes.some((r) => r.test(file.path))) continue;
-		const fm = app.metadataCache.getFileCache(file)?.frontmatter;
+		const fm = app.metadataCache.getFileCache(file)?.frontmatter as Frontmatter | undefined;
 		if (!fm) continue;
 		const url = fm[opts.frontmatterKey];
 		const parentUrl = fm['confluence_parent_url'];

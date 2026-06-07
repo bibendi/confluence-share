@@ -19,7 +19,7 @@ import { SyncEngine } from './sync/syncEngine';
 import { Logger } from './utils/logger';
 import { StatusBarManager } from './ui/statusBar';
 import { CreateBoundNoteModal } from './ui/createBoundNoteModal';
-import { insertTemplateFrontmatter } from './frontmatter/handler';
+import { insertTemplateFrontmatter, type Frontmatter } from './frontmatter/handler';
 import { SyncStatus } from './types';
 import { t } from './i18n';
 
@@ -504,7 +504,7 @@ export default class SyncConfluencePlugin extends Plugin {
 	}
 
 	private fileIsBound(file: TFile): boolean {
-		const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+		const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as Frontmatter | undefined;
 		if (!fm) return false;
 		const url = fm[this.settings.frontmatterKey];
 		const parent = fm['confluence_parent_url'];

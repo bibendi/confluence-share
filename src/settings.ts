@@ -56,7 +56,9 @@ export const DEFAULT_SETTINGS: SyncConfluenceSettings = {
 	syncOnStartup: false,
 
 	scanFolders: [],
-	ignorePatterns: ['.obsidian/**', '.trash/**', 'templates/**'],
+	// 注:Obsidian 配置目录(默认 .obsidian,用户可自定义)由 scanBoundNotes 隐式忽略,
+	// 这里只列用户场景里常见的额外忽略项。
+	ignorePatterns: ['.trash/**', 'templates/**'],
 
 	templateFolderPath: 'templates',
 	autoInstallTemplate: true,
@@ -174,9 +176,9 @@ export class SyncConfluenceSettingTab extends PluginSettingTab {
 				.then((setting) => {
 					const ta = setting.controlEl.createEl('textarea', { cls: 'sync-confluence-textarea' });
 					ta.value = s.scanFolders.join('\n');
-					ta.addEventListener('change', async () => {
+					ta.addEventListener('change', () => {
 						s.scanFolders = ta.value.split('\n').map((x) => x.trim()).filter(Boolean);
-						await this.plugin.saveSettings();
+						void this.plugin.saveSettings();
 					});
 				});
 
@@ -186,9 +188,9 @@ export class SyncConfluenceSettingTab extends PluginSettingTab {
 				.then((setting) => {
 					const ta = setting.controlEl.createEl('textarea', { cls: 'sync-confluence-textarea' });
 					ta.value = s.ignorePatterns.join('\n');
-					ta.addEventListener('change', async () => {
+					ta.addEventListener('change', () => {
 						s.ignorePatterns = ta.value.split('\n').map((x) => x.trim()).filter(Boolean);
-						await this.plugin.saveSettings();
+						void this.plugin.saveSettings();
 					});
 				});
 		});
@@ -344,9 +346,9 @@ export class SyncConfluenceSettingTab extends PluginSettingTab {
 			addComponent.call(setting, (compEl: HTMLElement) => {
 				const comp = new SecretComponentCtor(this.app, compEl);
 				comp.setValue(this.plugin.settings.apiToken);
-				comp.onChange(async (value: string) => {
+				comp.onChange((value: string) => {
 					this.plugin.settings.apiToken = value.trim();
-					await this.plugin.saveSettings();
+					void this.plugin.saveSettings();
 				});
 				return comp;
 			});

@@ -4,7 +4,7 @@
  */
 export async function sha1Hex(input: ArrayBuffer | string): Promise<string> {
 	const data = typeof input === 'string' ? new TextEncoder().encode(input) : new Uint8Array(input);
-	const subtle = globalThis.crypto?.subtle;
+	const subtle = window.crypto?.subtle;
 	if (subtle?.digest) {
 		const buf = await subtle.digest('SHA-1', data);
 		return toHex(new Uint8Array(buf));

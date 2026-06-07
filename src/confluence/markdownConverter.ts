@@ -17,6 +17,9 @@ export interface ExtractedReferences {
 	plantUml: DiagramBlock[];
 }
 
+/** markdown-it env 类型上是 `any`,我们只塞一个 callout 状态位 */
+interface CalloutEnv { __calloutOpen?: boolean }
+
 export interface ConvertContext {
 	/** filename -> 已上传的附件记录(供 convert 阶段决定 img 是否替换为 ac:image) */
 	attachedFilenames: Set<string>;
@@ -192,7 +195,7 @@ export class MarkdownConverter {
 		md.renderer.rules.blockquote_open = (tokens, idx, options, env, self) => {
 			const calloutType = detectCalloutType(tokens, idx);
 			if (calloutType) {
-				env.__calloutOpen = true;
+				(env as CalloutEnv).__calloutOpen = true;
 				return `<ac:structured-macro ac:name="${calloutType.macro}"><ac:rich-text-body>`;
 			}
 			return originalBlockquoteOpen
@@ -200,8 +203,9 @@ export class MarkdownConverter {
 				: self.renderToken(tokens, idx, options);
 		};
 		md.renderer.rules.blockquote_close = (tokens, idx, options, env, self) => {
-			if (env.__calloutOpen) {
-				env.__calloutOpen = false;
+			const e = env as CalloutEnv;
+			if (e.__calloutOpen) {
+				e.__calloutOpen = false;
 				return `</ac:rich-text-body></ac:structured-macro>`;
 			}
 			return originalBlockquoteClose
