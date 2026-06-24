@@ -400,27 +400,7 @@ function postProcessHtml(html: string, _ctx: ConvertContext): string {
 		const re = new RegExp(`<${tag}\\b([^>]*?)(?<!/)>`, 'gi');
 		out = out.replace(re, `<${tag}$1 />`);
 	}
-	return stripSupplementaryChars(out).trim();
-}
-
-/**
- * Confluence Server 默认 MySQL 用 utf8 (3-byte),装不下 codePoint > 0xFFFF 的字符
- * (emoji 🆕、汉字扩展区 𠮷 等),触发 400 "Unsupported character found in content"。
- *
- * 策略:替换为 `[U+XXXX]` 文本占位,既保留信息也是纯 ASCII,绕过数据库 charset 限制。
- * 如果用户站点是 utf8mb4 (Cloud 都是),这一步是无害的。
- */
-function stripSupplementaryChars(s: string): string {
-	let out = '';
-	for (const ch of s) {
-		const cp = ch.codePointAt(0)!;
-		if (cp > 0xFFFF) {
-			out += `[U+${cp.toString(16).toUpperCase()}]`;
-		} else {
-			out += ch;
-		}
-	}
-	return out;
+	return out.trim();
 }
 
 function escapeXml(s: string): string {
