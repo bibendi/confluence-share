@@ -16,11 +16,13 @@ import {
 import { ConfluenceApi } from './confluence/api';
 import { MarkdownConverter } from './confluence/markdownConverter';
 import { SyncEngine } from './sync/syncEngine';
+import { scanBoundNotes } from './sync/noteScanner';
+import { InstanceResolver } from './sync/instanceResolver';
 import { Logger } from './utils/logger';
 import { StatusBarManager } from './ui/statusBar';
 import { CreateBoundNoteModal } from './ui/createBoundNoteModal';
 import { insertTemplateFrontmatter, type Frontmatter } from './frontmatter/handler';
-import { SyncStatus } from './types';
+import { SyncStatus, type MultiInstanceBatchResult, type PerInstanceSyncResult, type FileSyncResult } from './types';
 import { t } from './i18n';
 
 const TEMPLATE_FILENAME = 'confluence-note.md';
@@ -49,8 +51,7 @@ export default class SyncConfluencePlugin extends Plugin {
 	logger!: Logger;
 	statusBar: StatusBarManager | null = null;
 
-	private api: ConfluenceApi | null = null;
-	private engine: SyncEngine | null = null;
+	private engines: Map<string, SyncEngine> = new Map();
 	private syncIntervalToken: number | null = null;
 	private startupTimeoutToken: number | null = null;
 
@@ -60,7 +61,7 @@ export default class SyncConfluencePlugin extends Plugin {
 
 		await this.loadSettings();
 
-		await this.ensureEngine();
+		await this.ensureEngines();
 
 		this.addRibbonIcon('cloud-upload', t('plugin.ribbonTooltip'), async () => {
 			await this.syncAll();
@@ -104,15 +105,20 @@ export default class SyncConfluencePlugin extends Plugin {
 	async loadSettings() {
 		const data = (await this.loadData()) as Partial<SyncConfluenceSettings> | null;
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, data ?? {});
+		await this.migrateLegacySettings();
 	}
 
 	async saveSettings() {
 		await this.saveData(this.settings);
 	}
 
-	/** 从 SecretStorage 拿到 token 真值(settings.apiToken 存的是密钥名) */
-	async getApiTokenValue(): Promise<string | null> {
-		const key = this.settings.apiToken;
+	/** 按实例 ID 从 SecretStorage 拿到 token 真值 */
+	async getApiTokenValueForInstance(instanceId: string): Promise<string | null> {
+		const key = `sync-confluence-token-${instanceId}`;
+		return this.getSecretValue(key);
+	}
+
+	private async getSecretValue(key: string): Promise<string | null> {
 		if (!key) return null;
 		const storage = (this.app as unknown as { secretStorage?: { getSecret?(key: string): unknown } }).secretStorage;
 		if (!storage || typeof storage.getSecret !== 'function') return null;
@@ -127,64 +133,164 @@ export default class SyncConfluencePlugin extends Plugin {
 		}
 	}
 
-	private async ensureEngine(): Promise<void> {
-		const tokenValue = await this.getApiTokenValue();
-		const needsUsername = this.settings.authType === 'basic';
-		if (!this.settings.confluenceBaseUrl || (needsUsername && !this.settings.username) || !tokenValue) {
-			this.engine = null;
-			this.api = null;
-			return;
-		}
-		this.api = new ConfluenceApi({
+	private async migrateLegacySettings(): Promise<void> {
+		// 如果 instances 已经存在且有数据,说明已经迁移过
+		if (this.settings.instances && this.settings.instances.length > 0) return;
+
+		// 如果没有 legacy baseUrl,也不迁移
+		if (!this.settings.confluenceBaseUrl) return;
+
+		// 迁移 legacy 配置到第一个实例
+		const defaultInstance = {
+			id: 'default',
+			name: 'Default',
 			baseUrl: this.settings.confluenceBaseUrl,
 			authType: this.settings.authType,
 			username: this.settings.username,
-			apiToken: tokenValue,
-		});
-		this.engine = new SyncEngine({
-			app: this.app,
-			settings: this.settings,
-			logger: this.logger,
-			api: this.api,
-		});
+			apiToken: `sync-confluence-token-default`,
+		};
+
+		// 如果有 legacy token key,把实际 token 迁移到新 key
+		if (this.settings.apiToken) {
+			const legacyToken = await this.getSecretValue(this.settings.apiToken);
+			if (legacyToken) {
+				const storage = (this.app as unknown as { secretStorage?: { setSecret?(key: string, value: string): unknown } }).secretStorage;
+				if (storage && typeof storage.setSecret === 'function') {
+					try {
+						const raw = storage.setSecret(defaultInstance.apiToken, legacyToken);
+						if (raw && typeof (raw as { then?: unknown }).then === 'function') {
+							await (raw as Promise<unknown>);
+						}
+					} catch (e) {
+						this.logger.warn('迁移 legacy token 失败', e instanceof Error ? e.message : String(e));
+					}
+				}
+			}
+		}
+
+		this.settings.instances = [defaultInstance];
+		// 可选:清理 legacy 字段,保留它们以避免意外覆盖旧数据
+		await this.saveSettings();
+		this.logger.info('Legacy settings migrated to multi-instance format');
+	}
+
+	private async ensureEngines(): Promise<void> {
+		this.engines.clear();
+		for (const inst of this.settings.instances) {
+			const tokenValue = await this.getApiTokenValueForInstance(inst.id);
+			const needsUsername = inst.authType === 'basic';
+			if (!inst.baseUrl || (needsUsername && !inst.username) || !tokenValue) {
+				continue;
+			}
+			const api = new ConfluenceApi({
+				baseUrl: inst.baseUrl,
+				authType: inst.authType,
+				username: inst.username,
+				apiToken: tokenValue,
+			});
+			const engine = new SyncEngine({
+				app: this.app,
+				settings: this.settings,
+				logger: this.logger,
+				api,
+			});
+			this.engines.set(inst.id, engine);
+		}
 	}
 
 	/** 设置变更后调用,如重建 renderer */
 	rebuildSyncEngine(): void {
-		if (this.engine) {
-			this.engine.rebuildRenderers();
-		} else {
-			void this.ensureEngine();
+		for (const engine of this.engines.values()) {
+			engine.rebuildRenderers();
 		}
-	}
-
-	/** Settings 改了 token / baseUrl / username 时调用,强制重建 api 与 engine */
-	async refreshCredentials(): Promise<void> {
-		await this.ensureEngine();
+		if (this.engines.size === 0) {
+			void this.ensureEngines();
+		}
 	}
 
 	// =========== 同步入口 ===========
 
 	async syncAll(): Promise<void> {
-		await this.ensureEngine();
-		if (!this.engine) {
+		await this.ensureEngines();
+		if (this.engines.size === 0) {
 			new Notice(t('notice.fillAuthFirst'));
 			return;
 		}
-		this.statusBar?.showSyncing(t('status.syncing'));
-		const r = await this.engine.syncAll();
-		if (!r) {
+		const files = scanBoundNotes(this.app, {
+			frontmatterKey: this.settings.frontmatterKey,
+			scanFolders: this.settings.scanFolders,
+			ignorePatterns: this.settings.ignorePatterns,
+		});
+		if (files.length === 0) {
 			this.statusBar?.update(SyncStatus.Idle);
 			return;
 		}
-		const summary = t('summary.all', { updated: r.updated, skipped: r.skipped, failed: r.failed });
-		if (r.failed === 0) {
-			this.statusBar?.showSuccess(summary);
-			if (this.settings.showNotice && r.total > 0) new Notice(t('notice.syncResult', { summary }));
-		} else {
-			this.statusBar?.showFailed(summary);
-			if (this.settings.showNotice) new Notice(t('notice.syncPartialFail', { summary }));
+		this.statusBar?.showSyncing(t('status.syncing'));
+		const resolver = new InstanceResolver({ instances: this.settings.instances });
+		const { groups, unmatched } = resolver.groupByInstance(files, this.app, this.settings.frontmatterKey);
+
+		const result: MultiInstanceBatchResult = {
+			instances: [],
+			total: 0,
+			updated: 0,
+			skipped: 0,
+			failed: 0,
+			unmatched: unmatched.map((f) => ({ path: f.path, skipped: false, success: false, error: t('notice.unmatchedUrl', { url: this.getFileUrl(f) }) })),
+		};
+
+		for (const [instId, group] of groups) {
+			const engine = this.engines.get(instId);
+			if (!engine) {
+				const failedFiles = group.files.map((f) => ({ path: f.path, skipped: false, success: false, error: t('notice.fillAuthFirst') }));
+				result.instances.push({
+					instanceName: group.instance.name,
+					instanceId: instId,
+					total: group.files.length,
+					updated: 0,
+					skipped: 0,
+					failed: group.files.length,
+					files: failedFiles,
+				});
+				result.total += group.files.length;
+				result.failed += group.files.length;
+				continue;
+			}
+			const r = await engine.syncFiles(group.files);
+			if (!r) {
+				const failedFiles = group.files.map((f) => ({ path: f.path, skipped: false, success: false, error: 'Engine busy' }));
+				result.instances.push({
+					instanceName: group.instance.name,
+					instanceId: instId,
+					total: group.files.length,
+					updated: 0,
+					skipped: 0,
+					failed: group.files.length,
+					files: failedFiles,
+				});
+				result.total += group.files.length;
+				result.failed += group.files.length;
+				continue;
+			}
+			const perInst: PerInstanceSyncResult = {
+				instanceName: group.instance.name,
+				instanceId: instId,
+				total: r.total,
+				updated: r.updated,
+				skipped: r.skipped,
+				failed: r.failed,
+				files: r.files,
+			};
+			result.instances.push(perInst);
+			result.total += r.total;
+			result.updated += r.updated;
+			result.skipped += r.skipped;
+			result.failed += r.failed;
 		}
+
+		result.total += unmatched.length;
+		result.failed += unmatched.length;
+
+		this.showMultiInstanceResult(result);
 	}
 
 	async syncCurrentFile(): Promise<void> {
@@ -195,8 +301,8 @@ export default class SyncConfluencePlugin extends Plugin {
 
 	/** 同步指定文件夹下所有绑定笔记(递归) */
 	async syncFolder(folder: TFolder): Promise<void> {
-		await this.ensureEngine();
-		if (!this.engine) {
+		await this.ensureEngines();
+		if (this.engines.size === 0) {
 			new Notice(t('notice.fillAuthFirst'));
 			return;
 		}
@@ -207,31 +313,99 @@ export default class SyncConfluencePlugin extends Plugin {
 		}
 		this.statusBar?.showSyncing(folder.name + '/');
 		this.logger.info(`Sync folder ${folder.path}: ${files.length} bound notes`);
-		const r = await this.engine.syncFiles(files);
-		if (!r) { this.statusBar?.update(SyncStatus.Idle); return; }
-		const summary = t('summary.folder', {
-			folder: folder.name,
-			updated: r.updated,
-			skipped: r.skipped,
-			failed: r.failed,
-		});
-		if (r.failed === 0) {
-			this.statusBar?.showSuccess(summary);
-			if (this.settings.showNotice) new Notice(t('notice.syncResult', { summary }));
-		} else {
-			this.statusBar?.showFailed(summary);
-			if (this.settings.showNotice) new Notice(t('notice.syncPartialFail', { summary }));
+		const resolver = new InstanceResolver({ instances: this.settings.instances });
+		const { groups, unmatched } = resolver.groupByInstance(files, this.app, this.settings.frontmatterKey);
+		const result: MultiInstanceBatchResult = {
+			instances: [],
+			total: 0,
+			updated: 0,
+			skipped: 0,
+			failed: 0,
+			unmatched: unmatched.map((f) => ({ path: f.path, skipped: false, success: false, error: t('notice.unmatchedUrl', { url: this.getFileUrl(f) }) })),
+		};
+		for (const [instId, group] of groups) {
+			const engine = this.engines.get(instId);
+			if (!engine) {
+				const failedFiles = group.files.map((f) => ({ path: f.path, skipped: false, success: false, error: t('notice.fillAuthFirst') }));
+				result.instances.push({
+					instanceName: group.instance.name,
+					instanceId: instId,
+					total: group.files.length,
+					updated: 0,
+					skipped: 0,
+					failed: group.files.length,
+					files: failedFiles,
+				});
+				result.total += group.files.length;
+				result.failed += group.files.length;
+				continue;
+			}
+			const r = await engine.syncFiles(group.files);
+			if (!r) {
+				const failedFiles = group.files.map((f) => ({ path: f.path, skipped: false, success: false, error: 'Engine busy' }));
+				result.instances.push({
+					instanceName: group.instance.name,
+					instanceId: instId,
+					total: group.files.length,
+					updated: 0,
+					skipped: 0,
+					failed: group.files.length,
+					files: failedFiles,
+				});
+				result.total += group.files.length;
+				result.failed += group.files.length;
+				continue;
+			}
+			result.instances.push({
+				instanceName: group.instance.name,
+				instanceId: instId,
+				total: r.total,
+				updated: r.updated,
+				skipped: r.skipped,
+				failed: r.failed,
+				files: r.files,
+			});
+			result.total += r.total;
+			result.updated += r.updated;
+			result.skipped += r.skipped;
+			result.failed += r.failed;
 		}
+		result.total += unmatched.length;
+		result.failed += unmatched.length;
+		this.showMultiInstanceResult(result, folder.name + '/');
 	}
 
 	async syncFile(file: TFile): Promise<void> {
-		await this.ensureEngine();
-		if (!this.engine) {
+		if (!this.fileIsBound(file)) {
+			new Notice(t('notice.noteNotBound'));
+			return;
+		}
+		await this.ensureEngines();
+		if (this.engines.size === 0) {
 			new Notice(t('notice.fillAuthFirst'));
 			return;
 		}
 		this.statusBar?.showSyncing(t('status.syncing'));
-		const r = await this.engine.syncOne(file);
+		const resolver = new InstanceResolver({ instances: this.settings.instances });
+		const url = this.getFileUrl(file);
+		if (!url) {
+			this.statusBar?.update(SyncStatus.Idle);
+			new Notice(t('notice.unmatchedUrl', { url: '' }));
+			return;
+		}
+		const inst = resolver.resolve(url);
+		if (!inst) {
+			this.statusBar?.update(SyncStatus.Idle);
+			new Notice(t('notice.unmatchedUrl', { url }));
+			return;
+		}
+		const engine = this.engines.get(inst.id);
+		if (!engine) {
+			this.statusBar?.update(SyncStatus.Idle);
+			new Notice(t('notice.fillAuthFirst'));
+			return;
+		}
+		const r = await engine.syncOne(file);
 		if (!r) { this.statusBar?.update(SyncStatus.Idle); return; }
 		if (r.skipped) {
 			this.statusBar?.update(SyncStatus.Idle);
@@ -243,6 +417,41 @@ export default class SyncConfluencePlugin extends Plugin {
 			this.statusBar?.showFailed(r.error);
 			new Notice(t('notice.syncedFail', { file: file.name, error: r.error ?? '' }));
 		}
+	}
+
+	private showMultiInstanceResult(result: MultiInstanceBatchResult, title?: string): void {
+		const anyFailed = result.failed > 0 || result.unmatched.length > 0;
+		const allFailed = result.instances.length > 0 && result.instances.every((i) => i.updated === 0 && i.skipped === 0 && i.failed > 0);
+		const lines = result.instances.map((i) => t('notice.instanceSummary', {
+			name: i.instanceName,
+			updated: String(i.updated),
+			skipped: String(i.skipped),
+			failed: String(i.failed),
+		}));
+		if (result.unmatched.length > 0) {
+			lines.push(`Unmatched: ${result.unmatched.length}`);
+		}
+		const summary = (title ? `${title}\n` : '') + lines.join('\n');
+		if (anyFailed) {
+			if (allFailed) {
+				this.statusBar?.showFailed(summary);
+			} else {
+				this.statusBar?.showPartial(summary);
+			}
+			if (this.settings.showNotice) new Notice(t('notice.syncPartialFail', { summary }));
+		} else {
+			this.statusBar?.showSuccess(summary);
+			if (this.settings.showNotice) new Notice(t('notice.syncResult', { summary }));
+		}
+	}
+
+	private getFileUrl(file: TFile): string {
+		const fm = this.app.metadataCache.getFileCache(file)?.frontmatter as Frontmatter | undefined;
+		if (!fm) return '';
+		const url = typeof fm[this.settings.frontmatterKey] === 'string' ? fm[this.settings.frontmatterKey] : '';
+		const parent = typeof fm['confluence_parent_url'] === 'string' ? fm['confluence_parent_url'] : '';
+		const combined = url || parent;
+		return typeof combined === 'string' ? combined.trim() : '';
 	}
 
 	// =========== 调度 ===========
@@ -349,7 +558,7 @@ export default class SyncConfluencePlugin extends Plugin {
 			id: 'create-bound-note',
 			name: t('command.createBoundNote'),
 			callback: () => {
-				const modal = new CreateBoundNoteModal(this.app, this.settings.scanFolders[0] ?? '', async (path, url) => {
+				const modal = new CreateBoundNoteModal(this.app, this.settings.scanFolders[0] ?? '', this.settings.instances, async (path, url, _instanceId) => {
 					await this.ensureFolder(parentOf(path));
 					const file = await this.app.vault.create(path, buildTemplateContent());
 					await insertTemplateFrontmatter(this.app, file, url);
@@ -373,22 +582,30 @@ export default class SyncConfluencePlugin extends Plugin {
 			id: 'validate-auth',
 			name: t('command.validateAuth'),
 			callback: async () => {
-				const tokenValue = await this.getApiTokenValue();
-				const needsUsername = this.settings.authType === 'basic';
-				if (!this.settings.confluenceBaseUrl || (needsUsername && !this.settings.username) || !tokenValue) {
+				if (this.settings.instances.length === 0) {
 					new Notice(t('notice.fillAuthFirst'));
 					return;
 				}
-				const api = new ConfluenceApi({
-					baseUrl: this.settings.confluenceBaseUrl,
-					authType: this.settings.authType,
-					username: this.settings.username,
-					apiToken: tokenValue,
-				});
-				const r = await api.validateAuth();
-				new Notice(r.ok
-					? t('notice.authOk', { name: r.displayName ?? '' })
-					: t('notice.authFail', { error: r.error ?? '' }));
+				const results: string[] = [];
+				for (const inst of this.settings.instances) {
+					const tokenValue = await this.getApiTokenValueForInstance(inst.id);
+					const needsUsername = inst.authType === 'basic';
+					if (!inst.baseUrl || (needsUsername && !inst.username) || !tokenValue) {
+						results.push(`${inst.name}: ${needsUsername ? t('settings.validate.missingBasic') : t('settings.validate.missingBearer')}`);
+						continue;
+					}
+					const api = new ConfluenceApi({
+						baseUrl: inst.baseUrl,
+						authType: inst.authType,
+						username: inst.username,
+						apiToken: tokenValue,
+					});
+					const r = await api.validateAuth();
+					results.push(r.ok
+						? `${inst.name}: ${t('notice.authOk', { name: r.displayName ?? '' })}`
+						: `${inst.name}: ${t('notice.authFail', { error: r.error ?? '' })}`);
+				}
+				new Notice(results.join('\n'));
 			},
 		});
 	}

@@ -11,6 +11,7 @@ export const zh: Messages = {
 
 	notice: {
 		noteNotOpen: '没有打开的笔记',
+		noteNotBound: '笔记未绑定到 Confluence',
 		fillAuthFirst: '请先在设置中填写 Confluence 认证信息',
 		syncResult: 'Sync Confluence: {summary}',
 		syncPartialFail: 'Sync Confluence 部分失败: {summary}',
@@ -28,6 +29,9 @@ export const zh: Messages = {
 		templateWriteFailed: '模板写入失败,查看控制台',
 		exportPreviewOk: '已导出 storage 预览: {path}',
 		exportPreviewFailed: '导出预览失败: {error}',
+		unmatchedUrl: '没有找到匹配的 Confluence 实例,URL: {url}',
+		urlDoesNotMatchInstance: 'URL 与所选实例不匹配 ({instance}): {url}',
+		instanceSummary: '{name}: 更新 {updated} / 跳过 {skipped} / 失败 {failed}',
 		pathRequired: '请填写笔记路径',
 		urlRequired: '请填写 Confluence URL',
 		urlCannotParsePageId: '无法从 URL 解析 page ID',
@@ -59,6 +63,7 @@ export const zh: Messages = {
 		syncing: '☁ 同步中',
 		success: '☁ 已同步',
 		failed: '☁ 失败',
+		partial: '☁ 部分失败',
 		tooltipIdle: 'Sync Confluence: 空闲{lastSuffix}',
 		tooltipLastSync: ' - 最后同步: {time}',
 		tooltipSyncing: 'Sync Confluence: 正在同步...',
@@ -78,6 +83,17 @@ export const zh: Messages = {
 			diagrams: '图表渲染(Mermaid / PlantUML)',
 			ui: '通知与状态栏',
 		},
+		instances: {
+			add: '添加 Confluence 实例',
+			remove: '删除',
+			moveUp: '上移',
+			moveDown: '下移',
+			name: '实例名称',
+			nameDesc: '此实例的显示名称,必须唯一',
+			duplicateName: '实例名称必须唯一',
+			duplicateBaseUrl: 'Base URL 必须唯一',
+			lastInstance: '至少保留一个实例',
+		},
 		baseUrl: {
 			name: 'Confluence base URL',
 			desc: 'Cloud 形如 https://xxx.atlassian.net/wiki;Server 通常无 /wiki 后缀,如 https://confluence.your-corp.com',
@@ -96,9 +112,9 @@ export const zh: Messages = {
 		token: {
 			nameBasic: '密码 / API Token',
 			nameBearer: 'Personal Access Token',
-			descBasic: '从下方下拉中选择已在密钥库中保存的密钥。Cloud 填 Atlassian API Token;Server 域账号体系填登录密码',
-			descBearer: '从下方下拉中选择已在密钥库中保存的 PAT(Confluence 个人 → 设置 → Personal Access Tokens 创建)',
-			placeholderSecretName: '密钥名称(需 Obsidian 1.11.4+ 密钥库)',
+			descBasic: '直接粘贴 API Token。Cloud 填 Atlassian API Token;Server 域账号体系填登录密码',
+			descBearer: '直接粘贴 PAT(Confluence 个人 → 设置 → Personal Access Tokens 创建)',
+			placeholderPasteToken: '在此粘贴 token',
 			hintLabel: '创建密钥:',
 			hintBody: ' 设置 → 密钥库 → 创建新密钥;在 Atlassian 账户 → Security → API tokens 创建一个 token,粘贴为密钥值。',
 		},
@@ -110,6 +126,11 @@ export const zh: Messages = {
 			ok: '认证成功: {name}',
 			fail: '认证失败: {error}',
 			exception: '验证异常: {error}',
+		},
+		migrationNotice: '你已有的 Confluence 连接已迁移为 "Default"。',
+		instanceSelect: {
+			label: 'Confluence 实例',
+			desc: '选择要绑定到的实例',
 		},
 		interval: {
 			name: '定时同步间隔(分钟)',

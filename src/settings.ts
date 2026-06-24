@@ -3,9 +3,10 @@ import * as obsidianModule from 'obsidian';
 import type SyncConfluencePlugin from './main';
 import { ConfluenceApi, ConfluenceAuthType } from './confluence/api';
 import { t } from './i18n';
+import { ConfluenceInstance } from './types';
 
 export interface SyncConfluenceSettings {
-	// ========== 认证 ==========
+	// ========== 认证(legacy flat fields — kept for migration) ==========
 	/** 例: https://your-domain.atlassian.net/wiki */
 	confluenceBaseUrl: string;
 	/** 认证方式:basic(用户名+密码/Token)或 bearer(PAT) */
@@ -14,6 +15,9 @@ export interface SyncConfluenceSettings {
 	username: string;
 	/** SecretStorage 中保存的密钥名称(不存明文)。basic→密码/API Token,bearer→PAT */
 	apiToken: string;
+
+	// ========== 多实例配置 ==========
+	instances: ConfluenceInstance[];
 
 	// ========== 调度 ==========
 	/** 分钟,0=禁用定时同步 */
@@ -52,6 +56,8 @@ export const DEFAULT_SETTINGS: SyncConfluenceSettings = {
 	username: '',
 	apiToken: '',
 
+	instances: [],
+
 	syncInterval: 30,
 	syncOnStartup: false,
 
@@ -78,7 +84,7 @@ export const DEFAULT_SETTINGS: SyncConfluenceSettings = {
 
 export class SyncConfluenceSettingTab extends PluginSettingTab {
 	plugin: SyncConfluencePlugin;
-	private authResultEl: HTMLElement | null = null;
+	private authResultEls: Map<string, HTMLElement> = new Map();
 
 	constructor(app: App, plugin: SyncConfluencePlugin) {
 		super(app, plugin);
@@ -89,54 +95,25 @@ export class SyncConfluenceSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		const s = this.plugin.settings;
 		containerEl.empty();
+		this.authResultEls.clear();
 
-		// ===== 认证 =====
+		// ===== 认证 / 多实例 =====
 		this.renderSection(containerEl, t('settings.section.auth'), (el) => {
-			new Setting(el)
-				.setName(t('settings.baseUrl.name'))
-				.setDesc(t('settings.baseUrl.desc'))
-				.addText((tx) => tx
-					.setPlaceholder('https://xxx.atlassian.net/wiki')
-					.setValue(s.confluenceBaseUrl)
-					.onChange(async (v) => {
-						s.confluenceBaseUrl = v.trim();
-						await this.plugin.saveSettings();
-					}));
-
-			new Setting(el)
-				.setName(t('settings.authType.name'))
-				.setDesc(t('settings.authType.desc'))
-				.addDropdown((d) => d
-					.addOption('basic', t('settings.authType.basic'))
-					.addOption('bearer', t('settings.authType.bearer'))
-					.setValue(s.authType)
-					.onChange(async (v) => {
-						s.authType = v as ConfluenceAuthType;
-						await this.plugin.saveSettings();
-						this.display(); // 重渲染,切换 username 显隐
-					}));
-
-			if (s.authType === 'basic') {
-				new Setting(el)
-					.setName(t('settings.username.name'))
-					.setDesc(t('settings.username.desc'))
-					.addText((tx) => tx
-						.setPlaceholder(t('settings.username.placeholder'))
-						.setValue(s.username)
-						.onChange(async (v) => {
-							s.username = v.trim();
-							await this.plugin.saveSettings();
-						}));
+			// 确保至少有一个实例
+			if (!s.instances || s.instances.length === 0) {
+				s.instances = [this.createDefaultInstance()];
 			}
 
-			this.renderTokenSetting(el);
+			s.instances.forEach((inst, idx) => {
+				this.renderInstanceCard(el, inst, idx);
+			});
 
 			new Setting(el)
-				.addButton((btn) => btn.setButtonText(t('settings.validate.button')).setCta().onClick(async () => {
-					await this.runValidateAuth();
+				.addButton((btn) => btn.setButtonText(t('settings.instances.add')).setCta().onClick(async () => {
+					s.instances.push(this.createDefaultInstance());
+					await this.plugin.saveSettings();
+					this.display();
 				}));
-
-			this.authResultEl = el.createDiv({ cls: 'sync-confluence-auth-result' });
 		});
 
 		// ===== 同步调度 =====
@@ -332,71 +309,197 @@ export class SyncConfluenceSettingTab extends PluginSettingTab {
 		build(section);
 	}
 
-	private renderTokenSetting(parent: HTMLElement): void {
-		const isBearer = this.plugin.settings.authType === 'bearer';
-		const setting = new Setting(parent)
-			.setName(isBearer ? t('settings.token.nameBearer') : t('settings.token.nameBasic'))
-			.setDesc(isBearer ? t('settings.token.descBearer') : t('settings.token.descBasic'));
-		const SecretComponentCtor = (obsidianModule as unknown as {
-			SecretComponent?: new (app: App, el: HTMLElement) => { setValue(v: string): unknown; onChange(fn: (v: string) => void): unknown };
-		}).SecretComponent;
-		const addComponent = (setting as unknown as { addComponent?: (fn: (el: HTMLElement) => unknown) => Setting }).addComponent;
-
-		if (typeof addComponent === 'function' && SecretComponentCtor) {
-			addComponent.call(setting, (compEl: HTMLElement) => {
-				const comp = new SecretComponentCtor(this.app, compEl);
-				comp.setValue(this.plugin.settings.apiToken);
-				comp.onChange((value: string) => {
-					this.plugin.settings.apiToken = value.trim();
-					void this.plugin.saveSettings();
-				});
-				return comp;
-			});
-		} else {
-			setting.addText((tx) => tx
-				.setPlaceholder(t('settings.token.placeholderSecretName'))
-				.setValue(this.plugin.settings.apiToken)
-				.onChange(async (v) => {
-					this.plugin.settings.apiToken = v.trim();
-					await this.plugin.saveSettings();
-				}));
-		}
-
-		const hint = parent.createDiv({ cls: 'sync-confluence-keyvault-hint' });
-		hint.createEl('span', { text: t('settings.token.hintLabel'), cls: 'sync-confluence-keyvault-hint-label' });
-		hint.createSpan({ text: t('settings.token.hintBody') });
+	private createDefaultInstance(): ConfluenceInstance {
+		return {
+			id: this.generateInstanceId(),
+			name: 'New Instance',
+			baseUrl: '',
+			authType: 'basic',
+			username: '',
+			apiToken: '',
+		};
 	}
 
-	private async runValidateAuth(): Promise<void> {
-		if (!this.authResultEl) return;
-		this.authResultEl.removeClass('ok', 'error');
-		this.authResultEl.setText(t('settings.validate.pending'));
+	private generateInstanceId(): string {
+		return 'inst-' + Math.random().toString(36).slice(2, 9);
+	}
+
+	private renderInstanceCard(parent: HTMLElement, inst: ConfluenceInstance, idx: number): void {
+		const card = parent.createDiv({ cls: 'sync-confluence-instance-card' });
+		const isSingle = this.plugin.settings.instances.length <= 1;
+
+		// Header with name + actions
+		new Setting(card)
+			.setName(inst.name || t('settings.instances.name'))
+			.setHeading()
+			.addButton((btn) => btn.setIcon('arrow-up').setTooltip(t('settings.instances.moveUp')).onClick(async () => {
+				if (idx <= 0) return;
+				const arr = this.plugin.settings.instances;
+				const a = arr[idx - 1]!;
+				const b = arr[idx]!;
+				arr[idx - 1] = b;
+				arr[idx] = a;
+				await this.plugin.saveSettings();
+				this.display();
+			}))
+			.addButton((btn) => btn.setIcon('arrow-down').setTooltip(t('settings.instances.moveDown')).onClick(async () => {
+				const arr = this.plugin.settings.instances;
+				if (idx >= arr.length - 1) return;
+				const a = arr[idx]!;
+				const b = arr[idx + 1]!;
+				arr[idx] = b;
+				arr[idx + 1] = a;
+				await this.plugin.saveSettings();
+				this.display();
+			}))
+			.addButton((btn) => btn.setIcon('trash').setTooltip(t('settings.instances.remove')).setDisabled(isSingle).onClick(async () => {
+				if (isSingle) return;
+				// 删除该实例的 SecretStorage key
+				if (inst.apiToken) {
+					const storage = (this.app as unknown as { secretStorage?: { deleteSecret?(key: string): unknown } }).secretStorage;
+					if (storage && typeof storage.deleteSecret === 'function') {
+						try {
+							const raw = storage.deleteSecret(inst.apiToken);
+							if (raw && typeof (raw as { then?: unknown }).then === 'function') await (raw as Promise<unknown>);
+						} catch { /* ignore */ }
+					}
+				}
+				this.plugin.settings.instances.splice(idx, 1);
+				await this.plugin.saveSettings();
+				this.display();
+			}));
+
+		// Name
+		new Setting(card)
+			.setName(t('settings.instances.name'))
+			.setDesc(t('settings.instances.nameDesc'))
+			.addText((tx) => tx
+				.setPlaceholder('Company A')
+				.setValue(inst.name)
+				.onChange(async (v) => {
+					inst.name = v.trim();
+					await this.plugin.saveSettings();
+					this.display();
+				}));
+
+		// Base URL
+		new Setting(card)
+			.setName(t('settings.baseUrl.name'))
+			.setDesc(t('settings.baseUrl.desc'))
+			.addText((tx) => tx
+				.setPlaceholder('https://xxx.atlassian.net/wiki')
+				.setValue(inst.baseUrl)
+				.onChange(async (v) => {
+					inst.baseUrl = v.trim().replace(/\/+$/, '');
+					await this.plugin.saveSettings();
+				}));
+
+		// Auth type
+		new Setting(card)
+			.setName(t('settings.authType.name'))
+			.setDesc(t('settings.authType.desc'))
+			.addDropdown((d) => d
+				.addOption('basic', t('settings.authType.basic'))
+				.addOption('bearer', t('settings.authType.bearer'))
+				.setValue(inst.authType)
+				.onChange(async (v) => {
+					inst.authType = v as ConfluenceAuthType;
+					await this.plugin.saveSettings();
+					this.display();
+				}));
+
+		if (inst.authType === 'basic') {
+			new Setting(card)
+				.setName(t('settings.username.name'))
+				.setDesc(t('settings.username.desc'))
+				.addText((tx) => tx
+					.setPlaceholder(t('settings.username.placeholder'))
+					.setValue(inst.username)
+					.onChange(async (v) => {
+						inst.username = v.trim();
+						await this.plugin.saveSettings();
+					}));
+		}
+
+		// Token
+		this.renderInstanceTokenSetting(card, inst);
+
+		// Validate
+		new Setting(card)
+			.addButton((btn) => btn.setButtonText(t('settings.validate.button')).setCta().onClick(async () => {
+				await this.runValidateAuthForInstance(inst);
+			}));
+
+		const resultEl = card.createDiv({ cls: 'sync-confluence-auth-result' });
+		this.authResultEls.set(inst.id, resultEl);
+
+		// Uniqueness errors
+		const nameDup = this.plugin.settings.instances.some((other, oi) => oi !== idx && other.name === inst.name);
+		const urlDup = this.plugin.settings.instances.some((other, oi) => oi !== idx && other.baseUrl && other.baseUrl === inst.baseUrl);
+		if (nameDup) {
+			card.createDiv({ cls: 'sync-confluence-error', text: t('settings.instances.duplicateName') });
+		}
+		if (urlDup) {
+			card.createDiv({ cls: 'sync-confluence-error', text: t('settings.instances.duplicateBaseUrl') });
+		}
+	}
+
+	private renderInstanceTokenSetting(parent: HTMLElement, inst: ConfluenceInstance): void {
+		const isBearer = inst.authType === 'bearer';
+		new Setting(parent)
+			.setName(isBearer ? t('settings.token.nameBearer') : t('settings.token.nameBasic'))
+			.setDesc(isBearer ? t('settings.token.descBearer') : t('settings.token.descBasic'))
+			.addText((tx) => tx
+				.setPlaceholder(t('settings.token.placeholderPasteToken'))
+				.setValue('') // 不显示已保存的 token 值
+				.onChange(async (v) => {
+					const raw = v.trim();
+					if (!raw) return;
+					const key = `sync-confluence-token-${inst.id}`;
+					const storage = (this.app as unknown as { secretStorage?: { setSecret?(key: string, value: string): unknown } }).secretStorage;
+					if (storage && typeof storage.setSecret === 'function') {
+						try {
+							const res = storage.setSecret(key, raw);
+							if (res && typeof (res as { then?: unknown }).then === 'function') await (res as Promise<unknown>);
+							inst.apiToken = key;
+							await this.plugin.saveSettings();
+						} catch (e) {
+							console.error('Failed to save token', e);
+						}
+					}
+				}));
+	}
+
+	private async runValidateAuthForInstance(inst: ConfluenceInstance): Promise<void> {
+		const resultEl = this.authResultEls.get(inst.id);
+		if (!resultEl) return;
+		resultEl.removeClass('ok', 'error');
+		resultEl.setText(t('settings.validate.pending'));
 		try {
-			const tokenValue = await this.plugin.getApiTokenValue();
-			const s = this.plugin.settings;
-			const needsUsername = s.authType === 'basic';
-			if (!s.confluenceBaseUrl || (needsUsername && !s.username) || !tokenValue) {
-				this.authResultEl.addClass('error');
-				this.authResultEl.setText(needsUsername ? t('settings.validate.missingBasic') : t('settings.validate.missingBearer'));
+			const tokenValue = await this.plugin.getApiTokenValueForInstance(inst.id);
+			const needsUsername = inst.authType === 'basic';
+			if (!inst.baseUrl || (needsUsername && !inst.username) || !tokenValue) {
+				resultEl.addClass('error');
+				resultEl.setText(needsUsername ? t('settings.validate.missingBasic') : t('settings.validate.missingBearer'));
 				return;
 			}
 			const api = new ConfluenceApi({
-				baseUrl: s.confluenceBaseUrl,
-				authType: s.authType,
-				username: s.username,
+				baseUrl: inst.baseUrl,
+				authType: inst.authType,
+				username: inst.username,
 				apiToken: tokenValue,
 			});
 			const r = await api.validateAuth();
 			if (r.ok) {
-				this.authResultEl.addClass('ok');
-				this.authResultEl.setText(t('settings.validate.ok', { name: r.displayName ?? '' }));
+				resultEl.addClass('ok');
+				resultEl.setText(t('settings.validate.ok', { name: r.displayName ?? '' }));
 			} else {
-				this.authResultEl.addClass('error');
-				this.authResultEl.setText(t('settings.validate.fail', { error: r.error ?? '' }));
+				resultEl.addClass('error');
+				resultEl.setText(t('settings.validate.fail', { error: r.error ?? '' }));
 			}
 		} catch (e) {
-			this.authResultEl.addClass('error');
-			this.authResultEl.setText(t('settings.validate.exception', { error: e instanceof Error ? e.message : String(e) }));
+			resultEl.addClass('error');
+			resultEl.setText(t('settings.validate.exception', { error: e instanceof Error ? e.message : String(e) }));
 		}
 	}
 }

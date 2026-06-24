@@ -22,7 +22,7 @@ export class StatusBarManager {
 	update(status: SyncStatus, tooltip?: string): void {
 		if (!this.el) return;
 		this.current = status;
-		this.el.removeClass('idle', 'syncing', 'success', 'failed');
+		this.el.removeClass('idle', 'syncing', 'success', 'failed', 'partial');
 		this.el.addClass(status);
 		this.el.setText(SyncStatusText[status]);
 		this.el.setAttribute('aria-label', tooltip ?? this.defaultTooltip(status));
@@ -38,6 +38,7 @@ export class StatusBarManager {
 			case SyncStatus.Syncing: return t('status.tooltipSyncing');
 			case SyncStatus.Success: return t('status.tooltipSuccess', { time: new Date().toLocaleTimeString(localeTag) });
 			case SyncStatus.Failed: return t('status.tooltipFailed');
+			case SyncStatus.Partial: return t('status.tooltipFailed');
 			default: return 'Sync Confluence';
 		}
 	}
@@ -53,6 +54,15 @@ export class StatusBarManager {
 		this.resetTimeoutToken = window.setTimeout(() => {
 			this.resetTimeoutToken = null;
 			if (this.current === SyncStatus.Success) this.update(SyncStatus.Idle);
+		}, 4000);
+	}
+
+	showPartial(summary?: string): void {
+		this.update(SyncStatus.Partial, summary);
+		if (this.resetTimeoutToken !== null) window.clearTimeout(this.resetTimeoutToken);
+		this.resetTimeoutToken = window.setTimeout(() => {
+			this.resetTimeoutToken = null;
+			if (this.current === SyncStatus.Partial) this.update(SyncStatus.Idle);
 		}, 4000);
 	}
 

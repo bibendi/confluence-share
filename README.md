@@ -26,6 +26,7 @@
 ## 💡 Why Sync Confluence
 
 - **Frontmatter-driven binding** — drop a Confluence page URL into your note's frontmatter, that's the entire wiring.
+- **Multi-instance** — connect up to 10 Confluence instances; notes are routed by URL prefix.
 - **Cloud + Server / Data Center** — Basic auth (email + API token) for Atlassian Cloud, Bearer (Personal Access Token) for Server 7.9+ / DC.
 - **Content-hash skip** — unchanged notes are not re-pushed; bandwidth and audit log stay clean.
 - **Local attachments auto-upload** — `![[image.png]]` embeds become Confluence attachments.
@@ -66,19 +67,22 @@
 | **Server / Data Center 7.9+** | Personal Access Token | Confluence → Profile picture → **Settings → Personal Access Tokens** |
 | **Server (legacy)** | Your login password | (same as your domain login) |
 
-**2. Store the token in Obsidian's secret vault** (Obsidian 1.11.4+)
+**2. Open plugin settings**
 
-`Settings → Key vault → Create new secret` → paste the token → name it (e.g. `confluence-token`).
+`Settings → Sync Confluence → Confluence authentication`.
 
-**3. Plug it into the plugin**
+**3. Add an instance**
 
-`Settings → Sync Confluence → Confluence authentication`:
+Click **Add Confluence Instance** and fill in the card:
 
+- **Instance name** — any display name (e.g. `Company A`).
 - **Base URL** — Cloud: `https://xxx.atlassian.net/wiki`. Server/DC: `https://confluence.your-corp.com` (usually no `/wiki`).
 - **Authentication type** — Cloud + Server-legacy → **Basic**. Server-PAT → **Bearer**.
 - **Account** (Basic only) — Cloud: your Atlassian email. Server: your domain account.
-- **Password / API token** — pick the secret you just created.
+- **Password / API token** — paste the token directly; it is stored in Obsidian's encrypted vault automatically.
 - Click **Validate credentials**. You should see your display name.
+
+You can add up to 10 instances. Notes are matched to the correct instance by longest-prefix URL matching.
 
 **4. Bind a note**
 
@@ -163,7 +167,7 @@ Right-click menus:
 
 **Mermaid block shows source instead of image** — turn on **Mermaid → PNG** in settings; the default endpoint is the public `kroki.io`. Inside a corporate network, run your own kroki container and point the URL at it.
 
-**Cannot find secret vault** — requires Obsidian 1.11.4+. On older versions the plugin falls back to a plaintext field; upgrade Obsidian to use the encrypted vault.
+**Authentication failed after pasting token** — make sure you picked the right **Authentication type** (Basic vs Bearer) and that the token hasn't expired. The plugin stores the token in Obsidian's encrypted vault automatically.
 
 **The plugin keeps syncing the same note** — check `confluence_last_hash`; if you're editing in the Confluence UI too, every sync will overwrite Confluence and reset the hash. This plugin is **one-way (Obsidian → Confluence) by design**.
 
@@ -207,6 +211,7 @@ The `release.yml` workflow builds and attaches the three required files to a Git
 ### 💡 为什么用 Sync Confluence
 
 - **Frontmatter 驱动绑定** —— 在笔记 frontmatter 里写一个 Confluence 页面 URL，就这一步。
+- **多实例支持** —— 最多配置 10 个 Confluence 实例，按 URL 前缀自动路由笔记。
 - **Cloud + Server / DC** —— Cloud 用 Basic（邮箱 + API token），Server 7.9+ / DC 用 Bearer（个人访问令牌）。
 - **内容哈希去重** —— 没改的笔记不重复推送，省带宽也省审计噪声。
 - **本地附件自动上传** —— 笔记里 `![[image.png]]` 形式引用的本地图片自动上传为 Confluence 附件。
@@ -247,19 +252,22 @@ The `release.yml` workflow builds and attaches the three required files to a Git
 | **Server / DC 7.9+** | Personal Access Token | Confluence → 头像 → **设置 → Personal Access Tokens** |
 | **Server（老账号体系）** | 登录密码 | （和你登录 Confluence 的密码一致） |
 
-**2. 把 token 存到 Obsidian 密钥库**（需 Obsidian 1.11.4+）
+**2. 打开插件设置**
 
-`设置 → 密钥库 → 创建新密钥` → 把 token 粘到密钥值 → 给它起个名字（如 `confluence-token`）。
+`设置 → Sync Confluence → Confluence 认证`。
 
-**3. 在插件里连起来**
+**3. 添加实例**
 
-`设置 → Sync Confluence → Confluence 认证`：
+点 **添加 Confluence 实例**，填写卡片：
 
+- **实例名称** —— 任意显示名（如 `公司 A`）。
 - **Base URL** —— Cloud 形如 `https://xxx.atlassian.net/wiki`；Server / DC 通常无 `/wiki` 后缀，如 `https://confluence.your-corp.com`。
 - **认证方式** —— Cloud 与 Server 老账号体系选 **Basic**；Server PAT 选 **Bearer**。
 - **账号**（仅 Basic）—— Cloud 填 Atlassian 邮箱；Server 填域账号。
-- **密码 / API Token** —— 从下拉里选你刚存的密钥。
+- **密码 / API Token** —— 直接粘贴 token，插件会自动存入 Obsidian 加密密钥库。
 - 点 **验证认证**，应该看到自己的显示名。
+
+最多可添加 10 个实例。笔记按 URL 最长前缀匹配自动路由到对应实例。
 
 **4. 给一篇笔记加 frontmatter 绑定**
 
@@ -344,7 +352,7 @@ confluence_url:
 
 **Mermaid 代码块没渲成图** —— 在设置里把 **Mermaid → PNG** 打开。默认走公共 `kroki.io`；企业内网请自建 kroki 容器后改 URL。
 
-**找不到密钥库** —— 需要 Obsidian 1.11.4+。老版本会回退到明文输入；升级 Obsidian 即可走加密密钥库。
+**粘贴 token 后仍认证失败** —— 确认 **认证方式** 选对（Basic 还是 Bearer），并检查 token 是否过期。插件会自动将 token 存入 Obsidian 加密密钥库。
 
 **插件一直在同步同一篇笔记** —— 看 `confluence_last_hash`；如果你也在 Confluence 端直接改，每次同步都会被插件覆盖回 Obsidian 的内容，hash 会循环变化。本插件**单向（Obsidian → Confluence），不读回 Confluence 改动**。
 

@@ -12,6 +12,7 @@ export const en = {
 	// ===== Notices (transient toast messages) =====
 	notice: {
 		noteNotOpen: 'No active note',
+		noteNotBound: 'Note is not bound to Confluence',
 		fillAuthFirst: 'Please fill in Confluence credentials in Settings first',
 		syncResult: 'Sync Confluence: {summary}',
 		syncPartialFail: 'Sync Confluence partial failure: {summary}',
@@ -29,6 +30,9 @@ export const en = {
 		templateWriteFailed: 'Failed to write template, see console',
 		exportPreviewOk: 'Storage preview exported: {path}',
 		exportPreviewFailed: 'Failed to export preview: {error}',
+		unmatchedUrl: 'No matching Confluence instance found for URL: {url}',
+		urlDoesNotMatchInstance: 'URL does not match the selected instance ({instance}): {url}',
+		instanceSummary: '{name}: updated {updated} / skipped {skipped} / failed {failed}',
 		// CreateBoundNoteModal
 		pathRequired: 'Please fill in the note path',
 		urlRequired: 'Please fill in the Confluence URL',
@@ -65,6 +69,7 @@ export const en = {
 		syncing: '☁ Syncing',
 		success: '☁ Synced',
 		failed: '☁ Failed',
+		partial: '☁ Partial',
 		tooltipIdle: 'Sync Confluence: idle{lastSuffix}',
 		tooltipLastSync: ' — last sync: {time}',
 		tooltipSyncing: 'Sync Confluence: syncing…',
@@ -85,6 +90,17 @@ export const en = {
 			diagrams: 'Diagram rendering (Mermaid / PlantUML)',
 			ui: 'Notifications and status bar',
 		},
+		instances: {
+			add: 'Add Confluence Instance',
+			remove: 'Remove',
+			moveUp: 'Move up',
+			moveDown: 'Move down',
+			name: 'Instance name',
+			nameDesc: 'A unique display name for this instance',
+			duplicateName: 'Instance name must be unique',
+			duplicateBaseUrl: 'Base URL must be unique',
+			lastInstance: 'At least one instance is required',
+		},
 		baseUrl: {
 			name: 'Confluence base URL',
 			desc: 'Cloud looks like https://xxx.atlassian.net/wiki; Server usually has no /wiki suffix, e.g. https://confluence.your-corp.com',
@@ -103,9 +119,9 @@ export const en = {
 		token: {
 			nameBasic: 'Password / API token',
 			nameBearer: 'Personal Access Token',
-			descBasic: 'Pick a secret already stored in the key vault. Cloud uses an Atlassian API Token; Server with classic accounts uses the login password.',
-			descBearer: 'Pick a PAT already stored in the key vault (create one at Confluence → Profile → Personal Access Tokens).',
-			placeholderSecretName: 'Secret name (requires Obsidian 1.11.4+ key vault)',
+			descBasic: 'Paste your API token here. Cloud uses an Atlassian API Token; Server with classic accounts uses the login password.',
+			descBearer: 'Paste your PAT here (create one at Confluence → Profile → Personal Access Tokens).',
+			placeholderPasteToken: 'Paste token here',
 			hintLabel: 'Create a secret:',
 			hintBody: ' Settings → Key vault → Create new secret. Generate the token at Atlassian account → Security → API tokens and paste it as the secret value.',
 		},
@@ -117,6 +133,11 @@ export const en = {
 			ok: 'Authentication ok: {name}',
 			fail: 'Authentication failed: {error}',
 			exception: 'Validation error: {error}',
+		},
+		migrationNotice: 'Your existing Confluence connection has been migrated to "Default".',
+		instanceSelect: {
+			label: 'Confluence instance',
+			desc: 'Select which instance to bind this note to',
 		},
 		interval: {
 			name: 'Sync interval (minutes)',

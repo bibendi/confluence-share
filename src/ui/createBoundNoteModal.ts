@@ -1,6 +1,7 @@
 import { App, Modal, Notice, Setting, TFile } from 'obsidian';
 import { parsePageIdFromUrl } from '../confluence/urlParser';
 import { t } from '../i18n';
+import type { ConfluenceInstance } from '../types';
 
 export interface CreateBoundNoteResult {
 	file: TFile;
@@ -10,15 +11,18 @@ export interface CreateBoundNoteResult {
 export class CreateBoundNoteModal extends Modal {
 	private notePath: string;
 	private url: string = '';
+	private selectedInstanceId: string = '';
 
 	constructor(
 		app: App,
 		defaultFolder: string,
-		private onCreate: (path: string, url: string) => Promise<TFile>,
+		private instances: ConfluenceInstance[],
+		private onCreate: (path: string, url: string, instanceId: string) => Promise<TFile>,
 	) {
 		super(app);
 		const ts = new Date().toISOString().slice(0, 10);
 		this.notePath = (defaultFolder ? defaultFolder + '/' : '') + `confluence-note-${ts}.md`;
+		this.selectedInstanceId = instances[0]?.id ?? '';
 	}
 
 	onOpen(): void {
@@ -30,6 +34,19 @@ export class CreateBoundNoteModal extends Modal {
 			.setName(t('modal.createBoundNote.notePathName'))
 			.setDesc(t('modal.createBoundNote.notePathDesc'))
 			.addText((tx) => tx.setValue(this.notePath).onChange((v) => { this.notePath = v.trim(); }));
+
+		if (this.instances.length > 1) {
+			new Setting(wrap)
+				.setName(t('settings.instanceSelect.label'))
+				.setDesc(t('settings.instanceSelect.desc'))
+				.addDropdown((d) => {
+					for (const inst of this.instances) {
+						d.addOption(inst.id, inst.name);
+					}
+					d.setValue(this.selectedInstanceId);
+					d.onChange((v) => { this.selectedInstanceId = v; });
+				});
+		}
 
 		new Setting(wrap)
 			.setName(t('modal.createBoundNote.urlName'))
@@ -48,7 +65,12 @@ export class CreateBoundNoteModal extends Modal {
 					return;
 				}
 				try {
-					await this.onCreate(this.notePath.endsWith('.md') ? this.notePath : this.notePath + '.md', this.url);
+					const inst = this.instances.find((i) => i.id === this.selectedInstanceId);
+					if (inst && inst.baseUrl && !this.url.toLowerCase().startsWith(inst.baseUrl.toLowerCase())) {
+						new Notice(t('notice.urlDoesNotMatchInstance', { url: this.url, instance: inst.name }));
+						return;
+					}
+					await this.onCreate(this.notePath.endsWith('.md') ? this.notePath : this.notePath + '.md', this.url, this.selectedInstanceId);
 					this.close();
 				} catch (e) {
 					new Notice(t('notice.createFailed', { error: e instanceof Error ? e.message : String(e) }));
