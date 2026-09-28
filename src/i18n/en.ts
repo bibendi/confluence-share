@@ -251,7 +251,7 @@ export const en = {
 		template: {
 			title: '# Title',
 			usage:
-				'> Pick one of two flows:\n> 1. Existing Confluence page → put the page URL in `confluence_url`\n> 2. No page yet → put the **parent** page URL in `confluence_parent_url` (supports array for multi-parent sync). On first sync, the plugin will create a child page named after this note, then write the new URL back to `confluence_url`.\n> The other fields (page_id / last_synced / last_hash) are maintained automatically.',
+				'> Pick one of two flows:\n> 1. Existing Confluence page → put the page URL in `confluence_url`\n> 2. No page yet → put the **parent** page URL in `confluence_parent_url` (supports array for multi-parent sync). On first sync, the plugin will create a child page named after this note, then write the new URL back to `confluence_url`.\n> Optionally set `confluence_title` to override the page title; otherwise the note filename is used.\n> The other fields (page_id / last_synced / last_hash) are maintained automatically.',
 			bodyHeading: '## Body',
 			bodyPlaceholder: 'Write here…',
 			syncingPlaceholder: '<p>(syncing…)</p>',

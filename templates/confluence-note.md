@@ -1,5 +1,6 @@
 ---
 confluence_url: https://your-domain.atlassian.net/wiki/spaces/XXX/pages/0/Page-Title
+confluence_title:
 confluence_page_id: 
 confluence_last_synced: 
 confluence_last_hash: 

@@ -39,6 +39,7 @@ function buildTemplateContent(): string {
 	return `---
 confluence_url:
 confluence_parent_url:
+confluence_title:
 confluence_page_id:
 confluence_last_synced:
 confluence_last_hash:

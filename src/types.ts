@@ -54,6 +54,8 @@ export interface NoteBindingFormats {
 export interface NoteBinding {
 	/** index-aligned Confluence target slots; at least one entry */
 	targets: SyncTarget[];
+	/** Optional custom Confluence page title from `confluence_title`. */
+	title?: string;
 	/** in-memory only; used to preserve scalar/csv/array frontmatter style on write */
 	_formats?: NoteBindingFormats;
 	lastSynced?: string;

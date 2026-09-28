@@ -241,7 +241,7 @@ export const zh: Messages = {
 		template: {
 			title: '# 标题',
 			usage:
-				'> 两种用法二选一:\n> 1. 已有 Confluence 页面 → 把目标页面 URL 填到 `confluence_url`\n> 2. 还没建页面 → 把父页面 URL 填到 `confluence_parent_url`（支持数组，可同步到多个父页面）,首次同步时插件会自动以本笔记文件名为标题创建子页面,并把新页面 URL 回写到 `confluence_url`\n> 其余字段(page_id / last_synced / last_hash)由插件自动维护。',
+				'> 两种用法二选一:\n> 1. 已有 Confluence 页面 → 把目标页面 URL 填到 `confluence_url`\n> 2. 还没建页面 → 把父页面 URL 填到 `confluence_parent_url`（支持数组，可同步到多个父页面）,首次同步时插件会自动以本笔记文件名为标题创建子页面,并把新页面 URL 回写到 `confluence_url`\n> 可选填 `confluence_title` 覆盖页面标题;未填写时使用笔记文件名。\n> 其余字段(page_id / last_synced / last_hash)由插件自动维护。',
 			bodyHeading: '## 正文',
 			bodyPlaceholder: '在这里写内容...',
 			syncingPlaceholder: '<p>(同步中...)</p>',

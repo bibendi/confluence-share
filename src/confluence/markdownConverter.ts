@@ -122,6 +122,8 @@ export class MarkdownConverter {
 			resolveMention?: (linkpath: string, sourcePath: string) => string | null;
 			stripSupplementaryChars?: boolean;
 			defaultImageWidthPx?: number;
+			/** Optional custom Confluence page title; changes to it must invalidate the hash. */
+			pageTitle?: string;
 		},
 	): Promise<string> {
 		const body = stripFrontmatter(markdown);
@@ -142,7 +144,8 @@ export class MarkdownConverter {
 		const hasLocalImages = this.collectAttachments(preprocessed, sourcePath).length > 0;
 		const width = normalizeImageWidth(opts?.defaultImageWidthPx);
 		const imageWidthSalt = hasLocalImages ? `\0image-width:${width}` : '';
-		return sha1Hex(preprocessed + supplementarySalt + imageWidthSalt);
+		const pageTitleSalt = opts?.pageTitle !== undefined ? `\0confluence-title:${opts.pageTitle}` : '';
+		return sha1Hex(preprocessed + supplementarySalt + imageWidthSalt + pageTitleSalt);
 	}
 
 	private collectAttachments(markdown: string, sourcePath: string): AttachmentRef[] {

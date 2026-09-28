@@ -122,6 +122,15 @@ confluence_url: https://xxx.atlassian.net/wiki/spaces/DOC/pages/12345/My-Page
 ---
 ```
 
+Set `confluence_title` when the Confluence page title should differ from the note filename:
+
+```yaml
+---
+confluence_url: https://xxx.atlassian.net/wiki/spaces/DOC/pages/12345/My-Page
+confluence_title: Release notes
+---
+```
+
 **New page — let the plugin create it under a parent**
 
 ```yaml
@@ -131,7 +140,7 @@ confluence_url:
 ---
 ```
 
-On the first sync the plugin creates the child page (titled after the note's filename) and writes the new URL back into `confluence_url`. Subsequent syncs hit that URL directly.
+On the first sync the plugin creates the child page, using `confluence_title` when set and otherwise the note's filename, then writes the new URL back into `confluence_url`. Subsequent syncs hit that URL directly.
 
 **Multi-parent example — create or update copies under multiple parents**
 
@@ -208,7 +217,7 @@ For corporate networks using kroki, point **Kroki service URL** at a self-hosted
 |---|---|
 | `Sync all notes` | Walks scan folders and syncs every bound note. |
 | `Sync current note` | Syncs only the active note. |
-| `Insert Confluence frontmatter into current note` | Stubs the 5 frontmatter fields so you only have to paste the URL. |
+| `Insert Confluence frontmatter into current note` | Stubs the frontmatter fields so you only have to paste the URL (and optionally set `confluence_title`). |
 | `Create bound note` | Prompts for path + URL, then creates a new note already bound. |
 | `Export storage preview of current note` | Writes the converted Confluence storage XHTML to `<note>.preview.xml` — useful for debugging parser errors. |
 | `Validate credentials` | Pings Confluence with the current settings and shows your account name. |
@@ -371,6 +380,15 @@ confluence_url: https://xxx.atlassian.net/wiki/spaces/DOC/pages/12345/My-Page
 ---
 ```
 
+如果 Confluence 页面标题需要不同于笔记文件名，可以设置 `confluence_title`：
+
+```yaml
+---
+confluence_url: https://xxx.atlassian.net/wiki/spaces/DOC/pages/12345/My-Page
+confluence_title: Release notes
+---
+```
+
 **还没建页面 —— 让插件在指定父页下建子页面**
 
 ```yaml
@@ -380,7 +398,7 @@ confluence_url:
 ---
 ```
 
-首次同步时插件以本笔记文件名为标题创建子页面，并把新页面 URL 回写到 `confluence_url`。之后同步直接走这个 URL。
+首次同步时插件优先使用 `confluence_title` 创建子页面，未填写时使用本笔记文件名，并把新页面 URL 回写到 `confluence_url`。之后同步直接走这个 URL。
 
 **多父页面示例 —— 同一篇笔记同步到多个父页面下的副本**
 
@@ -457,7 +475,7 @@ confluence_username:
 |---|---|
 | `同步全部笔记` | 遍历扫描目录，同步所有已绑定的笔记 |
 | `同步当前笔记` | 仅同步当前活动笔记 |
-| `在当前笔记插入 frontmatter` | 把 5 个 frontmatter 字段填好，你只需要粘 URL |
+| `在当前笔记插入 frontmatter` | 把 frontmatter 字段填好，你只需要粘 URL（也可以再设置 `confluence_title`） |
 | `创建绑定笔记` | 填路径 + URL，直接生成一篇已绑定的笔记 |
 | `导出当前笔记的 storage 预览` | 把转换后的 Confluence storage XHTML 写到 `<笔记>.preview.xml`，便于排查转换报错 |
 | `验证认证信息` | 用当前设置 ping Confluence，回显你的账号显示名 |

@@ -5,6 +5,7 @@ const FIELD = {
 	URL: 'confluence_url',
 	PARENT_URL: 'confluence_parent_url',
 	PAGE_ID: 'confluence_page_id',
+	TITLE: 'confluence_title',
 	LAST_SYNCED: 'confluence_last_synced',
 	LAST_HASH: 'confluence_last_hash',
 	ATTACHMENTS: 'confluence_attachments',
@@ -50,11 +51,14 @@ export function readBindingFromCache(app: App, file: TFile, urlKey: string = FIE
 
 	const rawAttachments = fm[FIELD.ATTACHMENTS];
 	const attachments = normalizeAttachments(rawAttachments);
+	const rawTitle = fm[FIELD.TITLE];
+	const title = normalizeTitleValue(rawTitle);
 	const rawLastSynced = fm[FIELD.LAST_SYNCED];
 	const rawLastHash = fm[FIELD.LAST_HASH];
 
 	return {
 		targets,
+		title: title || undefined,
 		_formats: formats,
 		lastSynced: typeof rawLastSynced === 'string' ? rawLastSynced : undefined,
 		lastHash: readLastHashFromFrontmatter(rawLastHash),
@@ -124,6 +128,7 @@ export async function insertTemplateFrontmatter(
 		if (frontmatterHasBinding(fm, urlKey)) return;
 		fm[urlKey] = placeholderUrl;
 		fm[FIELD.PARENT_URL] = '';
+		fm[FIELD.TITLE] = '';
 		fm[FIELD.PAGE_ID] = '';
 		fm[FIELD.LAST_SYNCED] = '';
 		fm[FIELD.LAST_HASH] = '';
@@ -215,6 +220,12 @@ function escapeCsvSegment(value: string): string {
 function normalizeScalarValue(value: unknown): string {
 	if (value === null || value === undefined) return '';
 	return typeof value === 'string' ? value.trim() : String(value).trim();
+}
+
+function normalizeTitleValue(value: unknown): string | undefined {
+	if (typeof value !== 'string' && typeof value !== 'number') return undefined;
+	const title = String(value).trim();
+	return title || undefined;
 }
 
 function targetsHaveBinding(targets: SyncTarget[]): boolean {

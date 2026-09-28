@@ -180,6 +180,7 @@ export class SyncEngine {
 				resolveMention,
 				stripSupplementaryChars: this.deps.instance.stripSupplementaryChars,
 				defaultImageWidthPx: this.deps.settings.defaultImageWidthPx,
+				pageTitle: binding.title,
 			});
 			const refs = await this.converter.extractReferences(markdown, path, {
 				mermaidExt: this.mermaid?.extension(),
@@ -464,7 +465,7 @@ export class SyncEngine {
 				binding.targets,
 				this.deps.instance.id,
 			);
-			return url && url.length > 0 ? { url, title: target.basename } : null;
+			return url && url.length > 0 ? { url, title: binding.title ?? target.basename } : null;
 		};
 	}
 
@@ -517,7 +518,7 @@ export class SyncEngine {
 					const created = await api.createPage({
 						spaceKey: parent.spaceKey,
 						parentId,
-						title: file.basename,
+						title: binding.title ?? file.basename,
 						storageXhtml: '<p>(syncing…)</p>',
 					});
 					targetUpdates.push({
@@ -578,7 +579,7 @@ export class SyncEngine {
 				if (!parent.spaceKey) {
 					throw new Error(`父页面缺少 spaceKey: ${target.parentUrl}`);
 				}
-				const title = file.basename;
+				const title = binding.title ?? file.basename;
 				this.deps.logger.info(`创建子页面: ${title} (parent=${parentId}, space=${parent.spaceKey})`);
 				const created = await this.deps.api.createPage({
 					spaceKey: parent.spaceKey,
@@ -654,7 +655,7 @@ export class SyncEngine {
 			}
 
 			const page = await this.deps.api.getPage(pageId);
-			await this.updatePageWithRetry(pageId, file.basename, storageXhtml, page.version, file.path);
+			await this.updatePageWithRetry(pageId, binding.title ?? file.basename, storageXhtml, page.version, file.path);
 
 			const mergedAttachments: Record<string, AttachmentRecord> = {
 				...previousAttachments,
