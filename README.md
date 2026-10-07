@@ -177,11 +177,11 @@ confluence_page_id: 12345, ""
 
 ## 🔗 Links & mentions
 
-**Wikilinks.** `[[Other Note]]` / `[[Other Note|alias]]` (and standard `[text](note.md)` links) are resolved through Obsidian's metadata cache. If the target note has a `confluence_url` for the current instance, the link becomes a hyperlink to that instance's page; otherwise it degrades to plain text. Batch syncs pre-create placeholder pages for parent-only notes first, so cross-references inside the same batch resolve on the first sync.
+**Wikilinks.** `[[Other Note]]` / `[[Other Note|alias]]` (and standard `[text](note.md)` links) are resolved through Obsidian's metadata cache. Plain wikilinks first check for a user mention (see below). Otherwise, if the target note has a `confluence_url` for the current instance, the link becomes a hyperlink to that instance's page; otherwise it degrades to plain text. Batch syncs pre-create placeholder pages for parent-only notes first, so cross-references inside the same batch resolve on the first sync.
 
 **Heading anchors.** Same-page `[[#Heading]]` / `[text](#heading)` and cross-page `[[Other Note#Heading]]` / `[text](note.md#heading)` links are converted to native Confluence heading anchors. Heading matching is case-sensitive, following Confluence behavior.
 
-**User mentions (Server / DC only).** Write `@[[John Doe]]` to mention a Confluence user. The plugin looks up the linked note (`John Doe.md`) and reads the current instance's username from its frontmatter:
+**User mentions (Server / DC only).** Write `[[John Doe]]` or `[[John Doe|alias]]` to mention a Confluence user. The plugin looks up the linked note (`John Doe.md`) and reads the current instance's username from its frontmatter:
 
 ```yaml
 ---
@@ -191,7 +191,7 @@ confluence_username:
 ---
 ```
 
-The keys are the stable instance IDs shown on each settings card. If the current instance has an entry, the mention becomes a real Confluence user link; otherwise it degrades to plain `@John Doe`. Legacy scalar usernames are migrated to every configured instance once. Cloud is not supported yet (Cloud storage format requires `ri:account-id`).
+The keys are the stable instance IDs shown on each settings card. A non-empty username for the current instance produces a real Confluence user link, taking priority over `confluence_url`; Confluence displays the user's name. Without a username, ordinary wikilink handling applies (page link or plain text). Links with heading or block fragments keep their page-link behavior. Legacy `@[[John Doe]]` syntax still works and falls back to plain `@John Doe` when the username is missing. Legacy scalar usernames are migrated to every configured instance once. Cloud is not supported yet (Cloud storage format requires `ri:account-id`).
 
 ## 🎨 Diagram rendering (optional)
 
@@ -435,11 +435,11 @@ confluence_page_id: 12345, ""
 
 ### 🔗 链接与 mention
 
-**Wikilink。** `[[另一篇笔记]]` / `[[另一篇笔记|别名]]`（以及标准 `[文本](note.md)` 链接）会经 Obsidian metadata cache 解析：目标笔记在当前实例有 `confluence_url` → 替换为该实例页面的超链接；没有 → 降级为纯文本。批量同步会先给“仅有 parent”的笔记预建占位页，同批笔记互相引用首次同步即可解析。
+**Wikilink。** `[[另一篇笔记]]` / `[[另一篇笔记|别名]]`（以及标准 `[文本](note.md)` 链接）会经 Obsidian metadata cache 解析：普通 wikilink 优先检查用户 mention（见下文），否则目标笔记在当前实例有 `confluence_url` → 替换为该实例页面的超链接；没有 → 降级为纯文本。批量同步会先给“仅有 parent”的笔记预建占位页，同批笔记互相引用首次同步即可解析。
 
 **标题锚点。** 同页 `[[#标题]]` / `[文本](#标题)` 和跨页 `[[另一篇笔记#标题]]` / `[文本](note.md#标题)` 会转换为 Confluence 原生标题锚点。标题匹配遵循 Confluence 规则，区分大小写。
 
-**用户 mention（仅 Server / DC）。** 写 `@[[张三]]` 即可 mention Confluence 用户。插件查找被链接的笔记（`张三.md`），按当前实例读取 `confluence_username`：
+**用户 mention（仅 Server / DC）。** 写 `[[张三]]` 或 `[[张三|别名]]` 即可 mention Confluence 用户。插件查找被链接的笔记（`张三.md`），按当前实例读取 `confluence_username`：
 
 ```yaml
 ---
@@ -449,7 +449,7 @@ confluence_username:
 ---
 ```
 
-键是每张设置卡里显示的稳定实例 ID。当前实例有值时会生成真实 Confluence 用户链接；缺失时只在该实例降级为纯文本 `@张三`。旧版单值 username 会一次性迁移到全部已配置实例。Cloud 暂不支持（Cloud storage 格式要求 `ri:account-id`）。
+键是每张设置卡里显示的稳定实例 ID。当前实例有非空 username 时会生成真实 Confluence 用户链接，优先于 `confluence_url`，显示名称由 Confluence 决定。缺失时按普通 wikilink 处理（页面链接或纯文本）。带标题或块片段的链接保留页面链接行为。旧语法 `@[[张三]]` 仍然支持，缺失 username 时降级为纯文本 `@张三`。旧版单值 username 会一次性迁移到全部已配置实例。Cloud 暂不支持（Cloud storage 格式要求 `ri:account-id`）。
 
 ### 🎨 图表渲染（可选）
 

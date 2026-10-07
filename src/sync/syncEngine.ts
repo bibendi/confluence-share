@@ -382,12 +382,12 @@ export class SyncEngine {
 	 * 命中后从目标 frontmatter 选择属于当前实例的 URL;没有对应 URL 时返回 null,降级纯文本。
 	 */
 	/**
-	 * `@[[Name]]` mention resolver (issue #3 Phase 1): reads the target
+	 * `[[Name]]` / legacy `@[[Name]]` mention resolver: reads the target
 	 * note's `confluence_username` frontmatter, a per-instance map
 	 * `{ instanceId: username }`. This engine reads only its own
 	 * `instance.id` slice; other instances' slices belong to their own
-	 * engines. Missing key → null → markdownConverter degrades to plain
-	 * `@Name`.
+	 * engines. Missing key → null → normal wikilink handling, or plain
+	 * `@Name` for legacy mentions.
 	 *
 	 * Intentionally does NOT hit the Confluence user API — sync is a
 	 * scheduled/batch background job, and inline network lookups or

@@ -129,7 +129,7 @@ export interface BatchSyncResult {
 // ========== Multi-Confluence Support Types ==========
 
 /**
- * Per-instance identity map for `@[[Name]]` mentions. With multiple
+ * Per-instance identity map for `[[Name]]` / legacy `@[[Name]]` mentions. With multiple
  * instances the same person can have different usernames on different
  * Confluence installations (e.g. SSO vs. legacy domain account), so the
  * value is keyed by `ConfluenceInstance.id`.

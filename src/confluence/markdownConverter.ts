@@ -52,8 +52,8 @@ export interface ConvertContext {
 	 */
 	resolveWikilink?: (linkpath: string, sourcePath: string) => WikilinkResolution | null;
 	/**
-	 * 把 @[[Name]] mention 解析成 Confluence 用户名(issue #3,Server/DC 的 ri:username)。
-	 * 返回 null/undefined → 降级为纯文本 `@Name`。
+	 * Resolve [[Name]] (and legacy @[[Name]]) to a Server/DC username.
+	 * Missing username → normal wikilink handling; legacy mentions → plain `@Name`.
 	 */
 	resolveMention?: (linkpath: string, sourcePath: string) => string | null;
 }
@@ -343,7 +343,7 @@ function preprocessObsidianSyntax(md: string, opts?: PreprocessOptions): string 
 			const text = (alias ?? '').trim() || link.trim().split('/').pop() || link.trim();
 			if (resolveMention && sourcePath && linkpath) {
 				const username = resolveMention(linkpath, sourcePath);
-				if (username) return `MENTION:${username}`;
+				if (username) return `MENTION:${encodeURIComponent(username)}`;
 			}
 			return `@${text}`;
 		});
@@ -383,12 +383,17 @@ function preprocessObsidianSyntax(md: string, opts?: PreprocessOptions): string 
 		},
 	);
 
-	// 2b. [[link|alias]] / [[link]] → 解析为 CF 链接;带 #heading 时保留为跨页锚点。
+	// 2b. Plain wikilinks prefer a user mention, then a page link.
+	//     Links with #heading / #^block keep their existing page-link behavior.
 	s = s.replace(/\[\[([^\]\n|\\]+)(?:\\?\|([^\]\n]*))?\]\]/g, (_full, link: string, alias: string) => {
 		const cleanLink = link.trim();
 		const text = (alias ?? '').trim() || cleanLink.split('/').pop() || cleanLink;
 		const resolver = opts?.resolveWikilink;
 		const sourcePath = opts?.sourcePath;
+		if (opts?.resolveMention && sourcePath && cleanLink && !cleanLink.includes('#')) {
+			const username = opts.resolveMention(cleanLink, sourcePath);
+			if (username) return `MENTION:${encodeURIComponent(username)}`;
+		}
 		if (resolver && sourcePath) {
 			const hashIndex = cleanLink.indexOf('#');
 			const linkpath = (hashIndex >= 0 ? cleanLink.slice(0, hashIndex) : cleanLink).trim();
@@ -630,9 +635,9 @@ function postProcessHtml(html: string, ctx: ConvertContext): string {
 	}
 	// `[!summary]+ 目录` 的整块手写链接列表 → Confluence 官方 TOC(H2-H3)。
 	out = replaceTocMarkersWithMacros(out);
-	// @[[Name]] mention 哨兵 → Confluence 用户链接(preprocess 阶段埋入,穿透 markdown-it 的 HTML 转义)
+	// Mention markers → Confluence user links (inserted during preprocessing).
 	out = out.replace(/MENTION:([^]*)/g, (_full, username: string) => {
-		return `<ac:link><ri:user ri:username="${escapeAttr(username)}" /></ac:link>`;
+		return `<ac:link><ri:user ri:username="${escapeAttr(tryDecode(username))}" /></ac:link>`;
 	});
 	// [[#Heading]] / [[note#Heading]] 哨兵 → Confluence 原生锚点链接。
 	// Confluence 的 heading anchor 会移除空白,但保留大小写和标点。
